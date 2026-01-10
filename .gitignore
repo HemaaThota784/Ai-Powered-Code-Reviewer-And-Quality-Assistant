@@ -1,1 +1,71 @@
+# --------------------
+# Python cache files
+# --------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --------------------
+# Virtual environments
+# --------------------
+env/
+venv/
+.venv/
+
+# --------------------
+# Environment variables
+# --------------------
 .env
+
+# --------------------
+# IDE / Editor settings
+# --------------------
+.vscode/
+.idea/
+
+# --------------------
+# OS generated files
+# --------------------
+.DS_Store
+Thumbs.db
+
+# --------------------
+# Logs
+# --------------------
+*.log
+logs/
+review_logs.json
+
+# --------------------
+# Test & coverage reports
+# --------------------
+.pytest_cache/
+.coverage
+htmlcov/
+reports/
+pytest_results.json
+
+# --------------------
+# Database files (local only)
+# --------------------
+*.db
+*.sqlite
+*.sqlite3
+
+# --------------------
+# Build / distribution
+# --------------------
+build/
+dist/
+*.egg-info/
+
+# --------------------
+# Jupyter
+# --------------------
+.ipynb_checkpoints/
+
+# --------------------
+# Temporary files
+# --------------------
+tmp/
+cache/
