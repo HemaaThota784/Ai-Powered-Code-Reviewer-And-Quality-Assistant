@@ -2,7 +2,6 @@
 
 ![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
 ![Streamlit](https://img.shields.io/badge/streamlit-1.28+-red.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![LLM](https://img.shields.io/badge/LLM-Groq-purple.svg)
 ![Status](https://img.shields.io/badge/status-active-success.svg)
 
