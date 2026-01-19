@@ -7,7 +7,10 @@ Enhanced to generate docstrings for all functions AND classes regardless of exis
 
 import os
 from typing import Dict, List, Optional
-from groq import Groq
+from langchain_groq import ChatGroq
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnableLambda
 
 
 def _arg_type_str(arg: Dict, style: str = "google") -> str:
@@ -242,7 +245,7 @@ Generate only the docstring content (without the triple quotes):"""
 
 def generate_google_docstring(func_meta: Dict, use_groq: bool = True, style: str = "google") -> str:
     """
-    Generate a docstring for a function using Groq LLM in specified style.
+    Generate a docstring for a function using Groq LLM via LangChain.
     
     This function ALWAYS generates a new docstring regardless of whether one exists.
     It will generate docstrings for functions that:
@@ -259,73 +262,80 @@ def generate_google_docstring(func_meta: Dict, use_groq: bool = True, style: str
     """
     print(f"[DEBUG] Generating {style} docstring for: {func_meta.get('name', 'unknown')}")
     
-    if use_groq:
-        try:
-            # Initialize Groq client
-            api_key = os.getenv("GROQ_API_KEY")
-            if not api_key:
-                print(f"[WARNING] GROQ_API_KEY not found. Using fallback template for {style} style.")
-                return _generate_fallback_docstring(func_meta, style)
-            
-            print(f"[DEBUG] API Key found: {api_key[:10]}...")
-            client = Groq(api_key=api_key)
-            
-            # Build prompt
-            prompt = _build_prompt(func_meta, style)
-            print(f"[DEBUG] Prompt built, length: {len(prompt)}")
-            
-            # Call Groq API
-            print(f"[DEBUG] Calling Groq API...")
-            chat_completion = client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": f"You are a Python documentation expert. Generate clear, accurate {style.upper()}-style docstrings following the exact format conventions. Always generate a complete docstring regardless of existing documentation."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                model="llama-3.3-70b-versatile",
-                temperature=0.3,
-                max_tokens=500
-            )
-            
-            print(f"[DEBUG] API call successful")
-            
-            # Extract docstring content
-            docstring_content = chat_completion.choices[0].message.content.strip()
-            print(f"[DEBUG] Docstring content length: {len(docstring_content)}")
-            
-            # Remove any markdown code blocks if present
-            if docstring_content.startswith("```"):
-                lines = docstring_content.split('\n')
-                docstring_content = '\n'.join(lines[1:-1]) if len(lines) > 2 else docstring_content
-            
-            # Remove triple quotes if they were included despite instructions
-            docstring_content = docstring_content.strip('"""').strip("'''").strip()
-            
-            # Wrap in triple quotes
-            result = f'"""\n{docstring_content}\n"""'
-            print(f"[DEBUG] Final docstring generated successfully")
-            return result
-            
-        except Exception as e:
-            print(f"[ERROR] Error generating docstring with Groq: {e}")
-            print(f"[ERROR] Exception type: {type(e).__name__}")
-            import traceback
-            print(f"[ERROR] Traceback: {traceback.format_exc()}")
-            print(f"[INFO] Falling back to template-based generation for {style} style.")
-            return _generate_fallback_docstring(func_meta, style)
-    else:
+    if not use_groq:
         print(f"[INFO] Using fallback template generation (use_groq=False)")
+        return _generate_fallback_docstring(func_meta, style)
+    
+    # Check API key
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        print(f"[WARNING] GROQ_API_KEY not found. Using fallback template for {style} style.")
+        return _generate_fallback_docstring(func_meta, style)
+    
+    print(f"[DEBUG] API Key found: {api_key[:10]}...")
+    
+    try:
+        # 1️⃣ Initialize LLM
+        llm = ChatGroq(
+            model="llama-3.3-70b-versatile",
+            temperature=0.3,
+            max_tokens=500,
+            groq_api_key=api_key
+        )
+        
+        # 2️⃣ Create prompt template
+        prompt_template = ChatPromptTemplate.from_messages([
+            ("system", f"You are a Python documentation expert. Generate clear, accurate {style.upper()}-style docstrings following the exact format conventions. Always generate a complete docstring regardless of existing documentation."),
+            ("user", "{prompt_text}")
+        ])
+        
+        # 3️⃣ Create output parser
+        output_parser = StrOutputParser()
+        
+        # 4️⃣ Build the chain
+        chain = prompt_template | llm | output_parser
+        
+        # 5️⃣ Add fallback chain
+        fallback_chain = RunnableLambda(lambda x: _generate_fallback_docstring(func_meta, style))
+        chain_with_fallback = chain.with_fallbacks([fallback_chain])
+        
+        # 6️⃣ Build prompt
+        prompt_text = _build_prompt(func_meta, style)
+        print(f"[DEBUG] Prompt built, length: {len(prompt_text)}")
+        
+        # 7️⃣ Invoke chain
+        print(f"[DEBUG] Calling Groq API via LangChain...")
+        docstring_content = chain_with_fallback.invoke({"prompt_text": prompt_text})
+        print(f"[DEBUG] API call successful")
+        
+        print(f"[DEBUG] Docstring content length: {len(docstring_content)}")
+        
+        # 8️⃣ Clean up response
+        # Remove markdown code blocks if present
+        if docstring_content.startswith("```"):
+            lines = docstring_content.split('\n')
+            docstring_content = '\n'.join(lines[1:-1]) if len(lines) > 2 else docstring_content
+        
+        # Remove triple quotes if they were included
+        docstring_content = docstring_content.strip('"""').strip("'''").strip()
+        
+        # 9️⃣ Wrap in triple quotes
+        result = f'"""\n{docstring_content}\n"""'
+        print(f"[DEBUG] Final docstring generated successfully")
+        return result
+        
+    except Exception as e:
+        print(f"[ERROR] Error generating docstring with LangChain: {e}")
+        print(f"[ERROR] Exception type: {type(e).__name__}")
+        import traceback
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        print(f"[INFO] Falling back to template-based generation for {style} style.")
         return _generate_fallback_docstring(func_meta, style)
 
 
 def generate_class_docstring(class_meta: Dict, use_groq: bool = True, style: str = "google") -> str:
     """
-    Generate a docstring for a CLASS using Groq LLM in specified style.
+    Generate a docstring for a CLASS using Groq LLM via LangChain.
     
     This function ALWAYS generates a new class docstring regardless of whether one exists.
     
@@ -339,69 +349,73 @@ def generate_class_docstring(class_meta: Dict, use_groq: bool = True, style: str
     """
     print(f"[DEBUG] Generating {style} CLASS docstring for: {class_meta.get('name', 'unknown')}")
     
-    if use_groq:
-        try:
-            # Initialize Groq client
-            api_key = os.getenv("GROQ_API_KEY")
-            if not api_key:
-                print(f"[WARNING] GROQ_API_KEY not found. Using fallback template for {style} style.")
-                return _generate_fallback_class_docstring(class_meta, style)
-            
-            print(f"[DEBUG] API Key found: {api_key[:10]}...")
-            client = Groq(api_key=api_key)
-            
-            # Build prompt for class
-            prompt = _build_class_prompt(class_meta, style)
-            print(f"[DEBUG] Class prompt built, length: {len(prompt)}")
-            
-            # Call Groq API
-            print(f"[DEBUG] Calling Groq API for class...")
-            chat_completion = client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": f"You are a Python documentation expert. Generate clear, accurate {style.upper()}-style CLASS docstrings following the exact format conventions. Focus on describing the class purpose and responsibility."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                model="llama-3.3-70b-versatile",
-                temperature=0.3,
-                max_tokens=400
-            )
-            
-            print(f"[DEBUG] API call successful")
-            
-            # Extract docstring content
-            docstring_content = chat_completion.choices[0].message.content.strip()
-            print(f"[DEBUG] Class docstring content length: {len(docstring_content)}")
-            
-            # Remove any markdown code blocks if present
-            if docstring_content.startswith("```"):
-                lines = docstring_content.split('\n')
-                docstring_content = '\n'.join(lines[1:-1]) if len(lines) > 2 else docstring_content
-            
-            # Remove triple quotes if they were included despite instructions
-            docstring_content = docstring_content.strip('"""').strip("'''").strip()
-            
-            # Wrap in triple quotes
-            result = f'"""\n{docstring_content}\n"""'
-            print(f"[DEBUG] Final class docstring generated successfully")
-            return result
-            
-        except Exception as e:
-            print(f"[ERROR] Error generating class docstring with Groq: {e}")
-            print(f"[ERROR] Exception type: {type(e).__name__}")
-            import traceback
-            print(f"[ERROR] Traceback: {traceback.format_exc()}")
-            print(f"[INFO] Falling back to template-based generation for {style} style.")
-            return _generate_fallback_class_docstring(class_meta, style)
-    else:
+    if not use_groq:
         print(f"[INFO] Using fallback template generation for class (use_groq=False)")
         return _generate_fallback_class_docstring(class_meta, style)
-
+    
+    # Check API key
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        print(f"[WARNING] GROQ_API_KEY not found. Using fallback template for {style} style.")
+        return _generate_fallback_class_docstring(class_meta, style)
+    
+    print(f"[DEBUG] API Key found: {api_key[:10]}...")
+    
+    try:
+        # 1️⃣ Initialize LLM
+        llm = ChatGroq(
+            model="llama-3.3-70b-versatile",
+            temperature=0.3,
+            max_tokens=400,
+            groq_api_key=api_key
+        )
+        
+        # 2️⃣ Create prompt template
+        prompt_template = ChatPromptTemplate.from_messages([
+            ("system", f"You are a Python documentation expert. Generate clear, accurate {style.upper()}-style CLASS docstrings following the exact format conventions. Focus on describing the class purpose and responsibility."),
+            ("user", "{prompt_text}")
+        ])
+        
+        # 3️⃣ Create output parser
+        output_parser = StrOutputParser()
+        
+        # 4️⃣ Build the chain
+        chain = prompt_template | llm | output_parser
+        
+        # 5️⃣ Add fallback chain
+        fallback_chain = RunnableLambda(lambda x: _generate_fallback_class_docstring(class_meta, style))
+        chain_with_fallback = chain.with_fallbacks([fallback_chain])
+        
+        # 6️⃣ Build prompt
+        prompt_text = _build_class_prompt(class_meta, style)
+        print(f"[DEBUG] Class prompt built, length: {len(prompt_text)}")
+        
+        # 7️⃣ Invoke chain
+        print(f"[DEBUG] Calling Groq API for class via LangChain...")
+        docstring_content = chain_with_fallback.invoke({"prompt_text": prompt_text})
+        print(f"[DEBUG] API call successful")
+        
+        print(f"[DEBUG] Class docstring content length: {len(docstring_content)}")
+        
+        # 8️⃣ Clean up response
+        if docstring_content.startswith("```"):
+            lines = docstring_content.split('\n')
+            docstring_content = '\n'.join(lines[1:-1]) if len(lines) > 2 else docstring_content
+        
+        docstring_content = docstring_content.strip('"""').strip("'''").strip()
+        
+        # 9️⃣ Wrap in triple quotes
+        result = f'"""\n{docstring_content}\n"""'
+        print(f"[DEBUG] Final class docstring generated successfully")
+        return result
+        
+    except Exception as e:
+        print(f"[ERROR] Error generating class docstring with LangChain: {e}")
+        print(f"[ERROR] Exception type: {type(e).__name__}")
+        import traceback
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        print(f"[INFO] Falling back to template-based generation for {style} style.")
+        return _generate_fallback_class_docstring(class_meta, style)
 
 def _generate_fallback_docstring(func_meta: Dict, style: str = "google") -> str:
     """
