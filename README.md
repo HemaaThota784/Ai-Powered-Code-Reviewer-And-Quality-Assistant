@@ -158,8 +158,8 @@ AI_POWERED_CHATBOT/
 
 ### Step 1: Clone the Repository
 ```bash
-git clone https://github.com/yourusername/ai-code-reviewer.git
-cd ai-code-reviewer
+git clone https://github.com/HemaaThota784/Ai-Powered-Code-Reviewer-And-Quality-Assistant.git
+cd ai_powered_chatbot
 ```
 
 ### Step 2: Create Virtual Environment
