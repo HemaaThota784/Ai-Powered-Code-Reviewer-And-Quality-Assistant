@@ -137,11 +137,11 @@ AI_POWERED_CHATBOT/
 │
 ├── tests/
 │   ├── test_parser.py
-│      └── test_coverage_reporter.py
-       └── test_dashboard.py
-       └── test_generator.py
-       └── test_validator.py
-
+│   └── test_coverage_reporter.py
+│   └── test_dashboard.py
+│   └── test_generator.py
+│   └── test_validator.py
+│
 │
 ├── main_app.py
 ├── dashboard.py  
